@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SIPSorceryMedia.SoundFlow.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/RecordThenPlayback/RecordThenPlayback.csproj" />
+  </Folder>
+</Solution>

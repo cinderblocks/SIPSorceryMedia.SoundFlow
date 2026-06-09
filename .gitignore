@@ -1,0 +1,9 @@
+.vs
+.idea
+bin
+obj
+package
+*.user
+*.suo
+*.cache
+_ReSharper.*

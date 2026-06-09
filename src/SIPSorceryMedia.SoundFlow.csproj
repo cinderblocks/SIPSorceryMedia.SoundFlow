@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+  <PropertyGroup>
+    <PackageId>SIPSorceryMedia.SoundFlow</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Sjofn LLC</Authors>
+    <Description>SIPSorceryMedia audio source and sink backed by the SoundFlow audio engine.</Description>
+    <Copyright>Copyright 2026, Sjofn LLC</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>WebRTC;VoIP;SIPSorcery;Media;SoundFlow;Audio</PackageTags>
+    <PackageProjectUrl>https://github.com/cinderblocks/SIPSorceryMedia.SoundFlow</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/cinderblocks/SIPSorceryMedia.SoundFlow</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <PackageReference Include="SIPSorceryMedia.Abstractions" Version="8.0.12" />
+    <PackageReference Include="SoundFlow" Version="1.4.1" />
+  </ItemGroup>
+</Project>
