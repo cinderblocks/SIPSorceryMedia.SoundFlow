@@ -3,6 +3,8 @@ using SoundFlow.Abstracts;
 using SoundFlow.Abstracts.Devices;
 using SoundFlow.Components;
 using SoundFlow.Enums;
+using SoundFlow.Extensions.WebRtc.Apm;
+using SoundFlow.Extensions.WebRtc.Apm.Modifiers;
 using SIPSorceryMedia.Abstractions;
 using System;
 using System.Buffers;
@@ -50,12 +52,32 @@ public class SoundFlowAudioSource : IAudioSource, IDisposable
     private long  _droppedFrames = 0;
     private float _volumeGain    = 1.0f;
 
+    // APM state — config survives recorder teardown/reinit; modifier is recreated each time.
+    private sealed record ApmConfig(
+        AudioDevice? ReferenceDevice,
+        bool NoiseSuppression,
+        NoiseSuppressionLevel NsLevel,
+        bool HighPassFilter,
+        bool Agc1,
+        bool Agc2,
+        bool EchoCancellation,
+        int AecLatencyMs);
+
+    private ApmConfig? _apmConfig;
+    private WebRtcApmModifier? _apmModifier;
+
 #region IAudioSource events
     public event EncodedSampleDelegate  OnAudioSourceEncodedSample      = null!;
     public event RawAudioSampleDelegate OnAudioSourceRawSample           = null!;
     public event SourceErrorDelegate    OnAudioSourceError               = null!;
     public event Action<EncodedAudioFrame> OnAudioSourceEncodedFrameReady = null!;
 #endregion
+
+    /// <summary>The active WebRTC APM modifier, or <c>null</c> if audio processing is disabled.</summary>
+    public WebRtcApmModifier? ApmModifier
+    {
+        get { lock (_stateLock) { return _apmModifier; } }
+    }
 
     public SoundFlowAudioSource(string audioInDeviceName, IAudioEncoder audioEncoder, int frameSize = 1920)
     {
@@ -109,25 +131,38 @@ public class SoundFlowAudioSource : IAudioSource, IDisposable
         {
             log.LogError(ex, "[InitRecordingDevice] Failed to initialise capture device.");
             OnAudioSourceError?.Invoke($"SoundFlowAudioSource failed to open capture device: {ex.Message}");
+            return;
         }
+
+        // Re-apply APM if a config was set before this recorder was created.
+        ApplyApmConfig();
     }
 
     private void CloseSync()
     {
-        Recorder?          recToStop;
+        Recorder?           recToStop;
         AudioCaptureDevice? devToStop;
+        WebRtcApmModifier?  modToDispose;
 
         lock (_stateLock)
         {
-            recToStop  = _recorder;
-            devToStop  = _captureDevice;
+            recToStop    = _recorder;
+            devToStop    = _captureDevice;
+            modToDispose = _apmModifier;
             _recorder      = null;
             _captureDevice = null;
+            _apmModifier   = null;   // config is preserved for re-init
             _isStarted = false;
             _isPaused  = true;
         }
 
         try { _callbackCts?.Cancel(); } catch (Exception) { }
+
+        // Detach modifier before tearing down the recorder.
+        if (modToDispose != null && recToStop != null)
+            try { recToStop.RemoveModifier(modToDispose); } catch (Exception) { }
+        if (modToDispose != null)
+            try { modToDispose.Dispose(); } catch (Exception) { }
 
         if (recToStop != null)
         {
@@ -139,6 +174,104 @@ public class SoundFlowAudioSource : IAudioSource, IDisposable
         {
             try { devToStop.Stop();    } catch (Exception) { }
             try { devToStop.Dispose(); } catch (Exception) { }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // WebRTC APM
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Enables WebRTC audio processing on the capture stream.
+    /// Safe to call before or after the recorder is started; the modifier will be
+    /// (re-)applied whenever the underlying recorder is created or recreated.
+    /// For echo cancellation, pass the playback device as <paramref name="referenceDevice"/>
+    /// (obtainable from <see cref="SoundFlowAudioEndPoint.PlaybackDevice"/>).
+    /// </summary>
+    public void EnableAudioProcessing(
+        AudioDevice? referenceDevice = null,
+        bool noiseSuppression = true,
+        NoiseSuppressionLevel nsLevel = NoiseSuppressionLevel.High,
+        bool highPassFilter = true,
+        bool agc1 = false,
+        bool agc2 = false,
+        bool echoCancellation = false,
+        int aecLatencyMs = 40)
+    {
+        lock (_stateLock)
+        {
+            _apmConfig = new ApmConfig(referenceDevice, noiseSuppression, nsLevel,
+                                       highPassFilter, agc1, agc2, echoCancellation, aecLatencyMs);
+        }
+        ApplyApmConfig();
+    }
+
+    /// <summary>Removes and disposes the active WebRTC APM modifier.</summary>
+    public void DisableAudioProcessing()
+    {
+        Recorder?          rec;
+        WebRtcApmModifier? mod;
+
+        lock (_stateLock)
+        {
+            _apmConfig   = null;
+            rec          = _recorder;
+            mod          = _apmModifier;
+            _apmModifier = null;
+        }
+
+        if (mod != null)
+        {
+            try { rec?.RemoveModifier(mod); } catch (Exception) { }
+            try { mod.Dispose();            } catch (Exception) { }
+        }
+    }
+
+    private void ApplyApmConfig()
+    {
+        Recorder?           rec;
+        AudioCaptureDevice? cap;
+        ApmConfig?          cfg;
+        WebRtcApmModifier?  oldMod;
+
+        lock (_stateLock)
+        {
+            rec    = _recorder;
+            cap    = _captureDevice;
+            cfg    = _apmConfig;
+            oldMod = _apmModifier;
+            _apmModifier = null;
+        }
+
+        if (oldMod != null)
+        {
+            try { rec?.RemoveModifier(oldMod); } catch (Exception) { }
+            try { oldMod.Dispose();            } catch (Exception) { }
+        }
+
+        var refDevice = cfg?.ReferenceDevice ?? cap;
+        if (rec == null || cfg == null || refDevice == null) return;
+
+        try
+        {
+            var modifier = new WebRtcApmModifier(
+                refDevice,
+                aecEnabled:        cfg.EchoCancellation,
+                aecLatencyMs:      cfg.AecLatencyMs,
+                nsEnabled:         cfg.NoiseSuppression,
+                nsLevel:           cfg.NsLevel,
+                agc1Enabled:       cfg.Agc1,
+                agc2Enabled:       cfg.Agc2,
+                hpfEnabled:        cfg.HighPassFilter
+            );
+            rec.AddModifier(modifier);
+            lock (_stateLock) { _apmModifier = modifier; }
+            log.LogDebug("[ApplyApmConfig] WebRTC APM modifier applied (ns={NS} hpf={HPF} agc1={AGC1} agc2={AGC2} aec={AEC}).",
+                cfg.NoiseSuppression, cfg.HighPassFilter, cfg.Agc1, cfg.Agc2, cfg.EchoCancellation);
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "[ApplyApmConfig] Failed to apply WebRTC APM modifier.");
         }
     }
 

@@ -10,7 +10,7 @@
   </PropertyGroup>
   <PropertyGroup>
     <PackageId>SIPSorceryMedia.SoundFlow</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>Sjofn LLC</Authors>
     <Description>SIPSorceryMedia audio source and sink backed by the SoundFlow audio engine.</Description>
     <Copyright>Copyright 2026, Sjofn LLC</Copyright>
@@ -29,5 +29,6 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
     <PackageReference Include="SIPSorceryMedia.Abstractions" Version="8.0.12" />
     <PackageReference Include="SoundFlow" Version="1.4.1" />
+    <PackageReference Include="SoundFlow.Extensions.WebRtc.Apm" Version="1.4.0" />
   </ItemGroup>
 </Project>

@@ -298,6 +298,16 @@ public class SoundFlowAudioEndPoint : IAudioSink, IDisposable
 
     public MediaEndPoints ToMediaEndPoints() => new MediaEndPoints { AudioSink = this };
 
+    /// <summary>
+    /// The underlying SoundFlow playback device.
+    /// Pass this to <see cref="SoundFlowAudioSource.EnableAudioProcessing"/> as the
+    /// <c>referenceDevice</c> when echo cancellation is required.
+    /// </summary>
+    public AudioPlaybackDevice? PlaybackDevice
+    {
+        get { lock (_stateLock) { return _playbackDevice; } }
+    }
+
     /// <summary>Playback volume as a gain multiplier. 1.0 = unity gain, 0.0 = silent.</summary>
     public float Volume
     {
